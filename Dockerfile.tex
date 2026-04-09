@@ -1,0 +1,19 @@
+FROM ubuntu:24.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        biber \
+        fonts-texgyre \
+        latexmk \
+        texlive-bibtex-extra \
+        texlive-fonts-recommended \
+        texlive-lang-japanese \
+        texlive-latex-base \
+        texlive-latex-extra \
+        texlive-latex-recommended \
+        texlive-science \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /work

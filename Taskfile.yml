@@ -1,0 +1,27 @@
+version: '3'
+
+tasks:
+  default:
+    desc: Compile the only project found in ./projects
+    cmds:
+      - task: compile
+
+  compile:
+    desc: Compile a TeX project from a zip file or directory
+    vars:
+      INPUT: '{{default "" .INPUT}}'
+      TARGET: '{{default "" .TARGET}}'
+    cmds:
+      - ./scripts/compile_project.sh '{{.INPUT}}' '{{.TARGET}}'
+
+  inputs:
+    desc: List candidate projects in ./projects
+    cmds:
+      - ./scripts/list_inputs.sh
+
+  clean:
+    desc: Remove extracted workspaces and compiled outputs
+    cmds:
+      - rm -rf .work output
+      - mkdir -p output
+      - touch output/.gitkeep

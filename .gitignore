@@ -1,0 +1,7 @@
+.work/
+
+output/*
+!output/.gitkeep
+
+projects/*
+!projects/.gitkeep
