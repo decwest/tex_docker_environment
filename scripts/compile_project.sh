@@ -9,6 +9,7 @@ IMAGE_TAG="${TEX_DOCKER_IMAGE:-tex-docker-environment:ubuntu24.04}"
 INPUT_ARG="${1:-}"
 TARGET_ARG="${2:-}"
 LATEXMK_ARGS="${LATEXMK_ARGS:-}"
+LATEX_ENGINE="${LATEX_ENGINE:-}"
 
 mkdir -p "${PROJECTS_DIR}" "${WORK_ROOT}" "${OUTPUT_ROOT}"
 
@@ -18,6 +19,72 @@ abs_path() {
     cd "$(dirname "$path")"
     printf '%s/%s\n' "$(pwd)" "$(basename "$path")"
   )
+}
+
+select_input() {
+  local -n choices_ref="$1"
+  local selection=""
+  local index
+
+  printf 'Select input to compile:\n' >&2
+  for index in "${!choices_ref[@]}"; do
+    printf '  %d) %s\n' "$((index + 1))" "$(basename "${choices_ref[$index]}")" >&2
+  done
+
+  while true; do
+    printf 'Enter number (1-%d), or q to cancel: ' "${#choices_ref[@]}" >&2
+    if ! IFS= read -r selection; then
+      printf '\nSelection cancelled.\n' >&2
+      exit 1
+    fi
+
+    case "$selection" in
+      q | Q)
+        printf 'Selection cancelled.\n' >&2
+        exit 1
+        ;;
+    esac
+
+    if [[ "$selection" =~ ^[0-9]+$ ]] && ((selection >= 1 && selection <= ${#choices_ref[@]})); then
+      abs_path "${choices_ref[$((selection - 1))]}"
+      return
+    fi
+
+    printf 'Invalid selection: %s\n' "$selection" >&2
+  done
+}
+
+select_target() {
+  local -n choices_ref="$1"
+  local selection=""
+  local index
+
+  printf 'Select TeX target to compile:\n' >&2
+  for index in "${!choices_ref[@]}"; do
+    printf '  %d) %s\n' "$((index + 1))" "${choices_ref[$index]}" >&2
+  done
+
+  while true; do
+    printf 'Enter number (1-%d), or q to cancel: ' "${#choices_ref[@]}" >&2
+    if ! IFS= read -r selection; then
+      printf '\nSelection cancelled.\n' >&2
+      exit 1
+    fi
+
+    case "$selection" in
+      q | Q)
+        printf 'Selection cancelled.\n' >&2
+        exit 1
+        ;;
+    esac
+
+    if [[ "$selection" =~ ^[0-9]+$ ]] && ((selection >= 1 && selection <= ${#choices_ref[@]})); then
+      printf '%s\n' "${choices_ref[$((selection - 1))]}"
+      return
+    fi
+
+    printf 'Invalid selection: %s\n' "$selection" >&2
+  done
 }
 
 resolve_input() {
@@ -55,6 +122,11 @@ resolve_input() {
   fi
 
   if [[ ${#entries[@]} -gt 1 ]]; then
+    if [[ -t 0 ]]; then
+      select_input entries
+      return
+    fi
+
     printf 'Multiple inputs found in %s\n' "${PROJECTS_DIR}" >&2
     printf 'Specify one with: task compile INPUT=projects/<name>\n' >&2
     printf '\nCandidates:\n' >&2
@@ -176,11 +248,143 @@ resolve_target() {
     return
   fi
 
+  if [[ -t 0 ]]; then
+    select_target candidates
+    return
+  fi
+
   printf 'Multiple standalone TeX files were found.\n' >&2
   printf 'Specify the target explicitly with: task compile INPUT=... TARGET=path/to/file.tex\n' >&2
   printf '\nCandidates:\n' >&2
   printf '  %s\n' "${candidates[@]}" >&2
   exit 1
+}
+
+normalize_latex_engine() {
+  local engine="$1"
+
+  engine="$(printf '%s' "$engine" | tr '[:upper:]' '[:lower:]')"
+  engine="${engine%% *}"
+
+  case "$engine" in
+    pdflatex | pdftex)
+      printf 'pdflatex\n'
+      ;;
+    lualatex | luatex)
+      printf 'lualatex\n'
+      ;;
+    platex | ptex)
+      printf 'platex\n'
+      ;;
+    uplatex | uptex)
+      printf 'uplatex\n'
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+extract_documentclass() {
+  local tex_file="$1"
+
+  sed -nE 's/^[[:space:]]*\\documentclass(\[[^]]*\])?\{([^}]*)\}.*/\2/p' "$tex_file" |
+    head -n 1
+}
+
+detect_class_latex_engine() {
+  local project_root="$1"
+  local target_rel="$2"
+  local target_dir_rel
+  local class_name
+  local class_file
+
+  class_name="$(extract_documentclass "${project_root}/${target_rel}")"
+
+  case "$class_name" in
+    ujarticle | ujreport | ujbook)
+      printf 'uplatex\n'
+      return
+      ;;
+    jarticle | jreport | jbook | tarticle | treport | tbook | jltxdoc | jsarticle | jsbook | jsreport)
+      printf 'platex\n'
+      return
+      ;;
+  esac
+
+  if [[ -z "$class_name" ]]; then
+    return 1
+  fi
+
+  target_dir_rel="$(dirname "$target_rel")"
+  class_file="${project_root}/${target_dir_rel}/${class_name}.cls"
+
+  if [[ -f "$class_file" ]] && grep -Fq '\NeedsTeXFormat{pLaTeX2e}' "$class_file"; then
+    printf 'platex\n'
+    return
+  fi
+
+  return 1
+}
+
+detect_latex_engine() {
+  local project_root="$1"
+  local target_rel="$2"
+  local requested_engine="$3"
+  local tex_program=""
+  local class_engine=""
+
+  if [[ -n "$requested_engine" ]]; then
+    if normalize_latex_engine "$requested_engine"; then
+      return
+    fi
+
+    printf 'Unsupported LATEX_ENGINE: %s\n' "$requested_engine" >&2
+    printf 'Use one of: pdflatex, lualatex, platex, uplatex\n' >&2
+    exit 1
+  fi
+
+  tex_program="$(
+    sed -n '1,20p' "${project_root}/${target_rel}" |
+      sed -nE 's/^[[:space:]]*%[[:space:]]*![Tt][Ee][Xx][[:space:]]+(program|TS-program)[[:space:]]*=[[:space:]]*([^[:space:]]+).*/\2/p' |
+      head -n 1
+  )"
+
+  if [[ -n "$tex_program" ]] && normalize_latex_engine "$tex_program"; then
+    return
+  fi
+
+  if [[ -n "$tex_program" ]]; then
+    printf 'Unsupported TeX program comment in %s: %s\n' "$target_rel" "$tex_program" >&2
+    printf 'Use one of: pdflatex, lualatex, platex, uplatex\n' >&2
+    exit 1
+  fi
+
+  if class_engine="$(detect_class_latex_engine "$project_root" "$target_rel")"; then
+    printf '%s\n' "$class_engine"
+    return
+  fi
+
+  printf 'pdflatex\n'
+}
+
+latexmk_engine_arg() {
+  local engine="$1"
+
+  case "$engine" in
+    pdflatex)
+      printf -- '-pdf\n'
+      ;;
+    lualatex)
+      printf -- '-lualatex\n'
+      ;;
+    platex)
+      printf -- "-pdfdvi -latex='platex %%O %%S' -e '\$dvipdf=\"dvipdfmx %%O -o %%D %%S\";'\n"
+      ;;
+    uplatex)
+      printf -- "-pdfdvi -latex='uplatex %%O %%S' -e '\$dvipdf=\"dvipdfmx %%O -o %%D %%S\";'\n"
+      ;;
+  esac
 }
 
 copy_outputs() {
@@ -212,6 +416,27 @@ copy_outputs() {
   done
 }
 
+clean_output_target() {
+  local target_rel="$1"
+  local output_dir="$2"
+  local target_dir_rel
+  local target_name
+  local destination_dir
+  local ext
+
+  target_dir_rel="$(dirname "$target_rel")"
+  target_name="$(basename "${target_rel%.tex}")"
+  destination_dir="${output_dir}"
+
+  if [[ "$target_dir_rel" != "." ]]; then
+    destination_dir="${output_dir}/${target_dir_rel}"
+  fi
+
+  for ext in pdf log aux bbl blg fdb_latexmk fls out synctex.gz run.xml bcf; do
+    rm -f "${destination_dir}/${target_name}.${ext}"
+  done
+}
+
 INPUT_PATH="$(resolve_input "${INPUT_ARG}")"
 INPUT_BASENAME="$(basename "${INPUT_PATH}")"
 PROJECT_SLUG="$(slugify "${INPUT_BASENAME}")"
@@ -234,22 +459,32 @@ else
 fi
 
 TARGET_REL="$(resolve_target "${PROJECT_ROOT}" "${TARGET_ARG}")"
+ENGINE="$(detect_latex_engine "${PROJECT_ROOT}" "${TARGET_REL}" "${LATEX_ENGINE}")"
+ENGINE_ARG="$(latexmk_engine_arg "${ENGINE}")"
 OUTPUT_DIR="${OUTPUT_ROOT}/${PROJECT_SLUG}"
+TARGET_DIR_REL="$(dirname "${TARGET_REL}")"
+TARGET_FILE="$(basename "${TARGET_REL}")"
+DOCKER_WORKDIR="/work"
+
+if [[ "${TARGET_DIR_REL}" != "." ]]; then
+  DOCKER_WORKDIR="/work/${TARGET_DIR_REL}"
+fi
 
 printf 'Building Docker image: %s\n' "${IMAGE_TAG}"
 docker build -f "${ROOT_DIR}/Dockerfile.tex" -t "${IMAGE_TAG}" "${ROOT_DIR}"
 
 printf 'Compiling project: %s\n' "${INPUT_PATH}"
 printf 'TeX target: %s\n' "${TARGET_REL}"
+printf 'TeX engine: %s\n' "${ENGINE}"
 docker run --rm \
   --user "$(id -u):$(id -g)" \
   -v "${PROJECT_ROOT}:/work" \
-  -w /work \
+  -w "${DOCKER_WORKDIR}" \
   "${IMAGE_TAG}" \
-  bash -lc "latexmk -pdf -file-line-error -interaction=nonstopmode -halt-on-error ${LATEXMK_ARGS} \"${TARGET_REL}\""
+  bash -lc "latexmk ${ENGINE_ARG} -file-line-error -interaction=nonstopmode -halt-on-error ${LATEXMK_ARGS} \"${TARGET_FILE}\""
 
-rm -rf "${OUTPUT_DIR}"
 mkdir -p "${OUTPUT_DIR}"
+clean_output_target "${TARGET_REL}" "${OUTPUT_DIR}"
 copy_outputs "${PROJECT_ROOT}" "${TARGET_REL}" "${OUTPUT_DIR}"
 
 printf 'Done: %s\n' "${OUTPUT_DIR}"

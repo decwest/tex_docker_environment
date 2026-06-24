@@ -2,7 +2,7 @@ version: '3'
 
 tasks:
   default:
-    desc: Compile the only project found in ./projects
+    desc: Compile a project from ./projects, prompting when multiple inputs exist
     cmds:
       - task: compile
 
