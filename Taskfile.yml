@@ -19,6 +19,38 @@ tasks:
     cmds:
       - ./scripts/list_inputs.sh
 
+  iros2026:
+    desc: Compile IROS2026 in RAS conference format
+    cmds:
+      - task: compile
+        vars:
+          INPUT: projects/IROS2026
+          TARGET: root.tex
+
+  iros2026-ral:
+    desc: Compile IROS2026 in RA-L final journal format
+    cmds:
+      - task: compile
+        vars:
+          INPUT: projects/IROS2026
+          TARGET: root_ral.tex
+
+  ecdwpp:
+    desc: Compile EC-DWPP paper in RA-L journal format (Japanese draft, lualatex)
+    cmds:
+      - task: compile
+        vars:
+          INPUT: projects/RAL2026_ECDWPP
+          TARGET: root.tex
+
+  ecdwpp-proofs:
+    desc: Compile EC-DWPP full-proof standalone document
+    cmds:
+      - task: compile
+        vars:
+          INPUT: projects/RAL2026_ECDWPP
+          TARGET: theory/proofs_full.tex
+
   clean:
     desc: Remove extracted workspaces and compiled outputs
     cmds:
