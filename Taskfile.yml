@@ -51,6 +51,30 @@ tasks:
           INPUT: projects/RAL2026_ECDWPP
           TARGET: theory/proofs_full.tex
 
+  dwpp-ras:
+    desc: Compile DWPP RAS revision manuscript
+    cmds:
+      - task: compile
+        vars:
+          INPUT: projects/DWPP_RAS
+          TARGET: manuscript/elsarticle-template-num.tex
+
+  nadwpp:
+    desc: Compile NA-DWPP paper in RA-L journal format (Japanese draft, lualatex)
+    cmds:
+      - task: compile
+        vars:
+          INPUT: projects/RAL2026_NADWPP
+          TARGET: root.tex
+
+  nadwpp-derivations:
+    desc: Compile NA-DWPP full-derivation standalone document
+    cmds:
+      - task: compile
+        vars:
+          INPUT: projects/RAL2026_NADWPP
+          TARGET: theory/derivations_full.tex
+
   clean:
     desc: Remove extracted workspaces and compiled outputs
     cmds:
