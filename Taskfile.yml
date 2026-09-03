@@ -59,6 +59,14 @@ tasks:
           INPUT: projects/DWPP_RAS
           TARGET: manuscript/elsarticle-template-num.tex
 
+  ecpp-access:
+    desc: Compile ECPP IEEE Access manuscript
+    cmds:
+      - task: compile
+        vars:
+          INPUT: projects/ECPP_ACCESS
+          TARGET: manuscript/access.tex
+
   nadwpp:
     desc: Compile NA-DWPP paper in RA-L journal format (Japanese draft, lualatex)
     cmds:
